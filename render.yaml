@@ -28,9 +28,6 @@ services:
         fromDatabase:
           name: snapsummary-db
           property: port
-    startCommand: >
-      sh -c "python manage.py migrate &&
-             python manage.py runserver 0.0.0.0:$PORT"
 
   # ── React Frontend ──────────────────────────────────────────────
   - type: web
