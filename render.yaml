@@ -1,0 +1,53 @@
+services:
+  # ── Django Backend ──────────────────────────────────────────────
+  - type: web
+    name: snapsummary-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DB_NAME
+        value: snapsummary
+      - key: DB_USER
+        fromDatabase:
+          name: snapsummary-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: snapsummary-db
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: snapsummary-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: snapsummary-db
+          property: port
+    startCommand: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:$PORT"
+
+  # ── React Frontend ──────────────────────────────────────────────
+  - type: web
+    name: snapsummary-frontend
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npx serve -s build -l $PORT
+    envVars:
+      - key: REACT_APP_API_URL
+        fromService:
+          name: snapsummary-backend
+          type: web
+          property: host
+
+# ── MySQL Database ──────────────────────────────────────────────
+databases:
+  - name: snapsummary-db
+    databaseName: snapsummary
+    plan: free
