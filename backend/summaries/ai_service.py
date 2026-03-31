@@ -11,15 +11,40 @@ def get_client():
         _client = Groq(api_key=settings.OPENAI_API_KEY)
     return _client
 
-SUPPORTED = {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm', '.ogg', '.flac'}
+AUDIO_VIDEO_SUPPORTED = {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm', '.ogg', '.flac', '.mov', '.avi'}
+TEXT_SUPPORTED = {'.pdf', '.txt'}
+
 
 def extract_audio_if_needed(file_path: str) -> str:
     ext = Path(file_path).suffix.lower()
-    if ext in SUPPORTED:
+    if ext in {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm', '.ogg', '.flac'}:
         return file_path
     output_path = file_path.replace(ext, '_audio.mp3')
     os.system(f'ffmpeg -i "{file_path}" -vn -acodec mp3 -q:a 2 "{output_path}" -y -loglevel quiet')
     return output_path if os.path.exists(output_path) else file_path
+
+
+def extract_text_from_pdf(file_path: str) -> str:
+    try:
+        import pdfplumber
+        text = ''
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + '\n'
+        return text.strip()
+    except Exception as e:
+        raise RuntimeError(f"Failed to extract PDF text: {e}")
+
+
+def extract_text_from_txt(file_path: str) -> str:
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            return f.read().strip()
+    except Exception as e:
+        raise RuntimeError(f"Failed to read text file: {e}")
+
 
 def transcribe_audio(file_path: str) -> dict:
     audio_path = extract_audio_if_needed(file_path)
@@ -38,19 +63,26 @@ def transcribe_audio(file_path: str) -> dict:
         'duration': getattr(response, 'duration', None),
     }
 
-def summarize_transcript(transcript: str, filename: str) -> str:
-    client = get_client()
-    prompt = f"""You are an expert at summarizing audio and video content.
 
-The following is a transcript from a file named: "{filename}"
+def summarize_text(text: str, filename: str, content_type: str = 'auto') -> str:
+    client = get_client()
+
+    if content_type == 'document':
+        instruction = "The following is extracted text from a document."
+    else:
+        instruction = "The following is a transcript from an audio/video file."
+
+    prompt = f"""You are an expert at summarizing content clearly and concisely.
+
+{instruction} File name: "{filename}"
 
 Your task:
 1. Write a clear, concise summary (3-5 sentences) of the main content
 2. List the KEY POINTS as bullet points (max 7 points)
-3. Note the tone/style (e.g. lecture, interview, podcast, meeting)
+3. Note the content type (e.g. Lecture, Interview, Report, Article, Meeting, Podcast, etc.)
 
-Transcript:
-{transcript}
+Content:
+{text[:6000]}
 
 Format your response exactly like this:
 
@@ -63,30 +95,50 @@ Format your response exactly like this:
 • [Point 3]
 
 ## Content Type
-[e.g. Lecture / Interview / Meeting / Podcast / Other]
+[e.g. Lecture / Report / Interview / Meeting / Article / Other]
 """
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": "You summarize audio/video transcripts clearly and concisely."},
+            {"role": "system", "content": "You summarize content clearly and concisely."},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=800,
+        max_tokens=1000,
         temperature=0.3,
     )
     return response.choices[0].message.content.strip()
 
+
 def process_file(summary_instance) -> None:
     try:
         file_path = summary_instance.file.path
-        transcription = transcribe_audio(file_path)
-        summary_text = summarize_transcript(transcription['text'], summary_instance.original_filename)
-        summary_instance.transcript = transcription['text']
+        ext = Path(file_path).suffix.lower()
+
+        if ext == '.pdf':
+            text = extract_text_from_pdf(file_path)
+            summary_instance.transcript = text
+            summary_instance.language = 'text'
+            summary_instance.duration_seconds = None
+            summary_text = summarize_text(text, summary_instance.original_filename, 'document')
+
+        elif ext == '.txt':
+            text = extract_text_from_txt(file_path)
+            summary_instance.transcript = text
+            summary_instance.language = 'text'
+            summary_instance.duration_seconds = None
+            summary_text = summarize_text(text, summary_instance.original_filename, 'document')
+
+        else:
+            transcription = transcribe_audio(file_path)
+            summary_instance.transcript = transcription['text']
+            summary_instance.language = transcription.get('language', 'unknown')
+            summary_instance.duration_seconds = transcription.get('duration')
+            summary_text = summarize_text(transcription['text'], summary_instance.original_filename, 'audio')
+
         summary_instance.summary = summary_text
-        summary_instance.language = transcription.get('language', 'unknown')
-        summary_instance.duration_seconds = transcription.get('duration')
         summary_instance.status = 'done'
         summary_instance.save()
+
     except Exception as e:
         summary_instance.status = 'error'
         summary_instance.error_message = str(e)

@@ -1,4 +1,5 @@
 import threading
+from pathlib import Path
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -9,28 +10,27 @@ from .models import Summary
 from .serializers import SummarySerializer, UploadSerializer
 from .ai_service import process_file
 
+DOCUMENT_TYPES = {'.pdf', '.txt'}
 
 class UploadView(APIView):
-    """
-    POST /api/upload/
-    Accepts a video or audio file, saves it, triggers async processing.
-    Returns the summary object immediately with status='processing'.
-    """
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
         serializer = UploadSerializer(data=request.data)
-
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         file = serializer.validated_data['file']
-
-        # Determine file type
         content_type = file.content_type or ''
-        file_type = 'video' if content_type.startswith('video') else 'audio'
+        ext = Path(file.name).suffix.lower()
 
-        # Create DB record
+        if ext in DOCUMENT_TYPES:
+            file_type = 'document'
+        elif content_type.startswith('video'):
+            file_type = 'video'
+        else:
+            file_type = 'audio'
+
         summary = Summary.objects.create(
             original_filename=file.name,
             file=file,
@@ -39,66 +39,38 @@ class UploadView(APIView):
             status='processing',
         )
 
-        # Process in background thread (non-blocking)
         thread = threading.Thread(target=process_file, args=(summary,))
         thread.daemon = True
         thread.start()
 
-        return Response(
-            SummarySerializer(summary).data,
-            status=status.HTTP_201_CREATED
-        )
+        return Response(SummarySerializer(summary).data, status=status.HTTP_201_CREATED)
 
 
 class SummaryDetailView(APIView):
-    """
-    GET /api/summaries/<id>/
-    Poll this endpoint to check processing status.
-    """
     def get(self, request, pk):
         summary = get_object_or_404(Summary, pk=pk)
         return Response(SummarySerializer(summary).data)
 
     def delete(self, request, pk):
         summary = get_object_or_404(Summary, pk=pk)
-        # Delete the uploaded file too
         if summary.file:
-            try:
-                summary.file.delete(save=False)
-            except Exception:
-                pass
+            try: summary.file.delete(save=False)
+            except: pass
         summary.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class HistoryView(APIView):
-    """
-    GET /api/history/
-    Returns all past summaries, newest first.
-    """
     def get(self, request):
         summaries = Summary.objects.all()
-        serializer = SummarySerializer(summaries, many=True)
-        return Response({
-            'count': summaries.count(),
-            'results': serializer.data,
-        })
+        return Response({'count': summaries.count(), 'results': SummarySerializer(summaries, many=True).data})
 
 
 class StatsView(APIView):
-    """
-    GET /api/stats/
-    Dashboard stats.
-    """
     def get(self, request):
-        total = Summary.objects.count()
-        done = Summary.objects.filter(status='done').count()
-        processing = Summary.objects.filter(status='processing').count()
-        errors = Summary.objects.filter(status='error').count()
-
         return Response({
-            'total': total,
-            'done': done,
-            'processing': processing,
-            'errors': errors,
+            'total': Summary.objects.count(),
+            'done': Summary.objects.filter(status='done').count(),
+            'processing': Summary.objects.filter(status='processing').count(),
+            'errors': Summary.objects.filter(status='error').count(),
         })

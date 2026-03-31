@@ -30,16 +30,24 @@ class UploadSerializer(serializers.Serializer):
             )
 
         allowed_types = [
+            # Video
             'video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo',
             'video/webm', 'video/x-matroska',
+            # Audio
             'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav',
-            'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac',
-            'audio/webm',
+            'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/webm',
+            # Documents
+            'application/pdf',
+            'text/plain',
         ]
 
-        if value.content_type not in allowed_types:
+        # Some browsers send different MIME types, also check extension
+        ext = value.name.rsplit('.', 1)[-1].lower() if '.' in value.name else ''
+        allowed_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'pdf', 'txt']
+
+        if value.content_type not in allowed_types and ext not in allowed_extensions:
             raise serializers.ValidationError(
-                f"Unsupported file type: {value.content_type}. Upload a video or audio file."
+                f"Unsupported file type. Supported: video, audio, PDF, TXT."
             )
 
         return value

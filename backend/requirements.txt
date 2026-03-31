@@ -8,3 +8,4 @@ httpx==0.27.2
 python-dotenv==1.0.1
 Pillow==10.2.0
 pydub==0.25.1
+pdfplumber==0.11.0
