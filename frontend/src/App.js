@@ -22,7 +22,7 @@ const STATUS_META = {
   error:      { label: 'Error',       color: 'var(--red)',    icon: <AlertCircle size={14} /> },
 };
 
-function StatCard({ label, value, accent }) {
+
   return (
     <div className="stat-card" style={{ borderColor: accent }}>
       <div className="stat-value" style={{ color: accent }}>{value}</div>
@@ -128,10 +128,9 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [currentItem, setCurrentItem] = useState(null);
   const [history, setHistory] = useState([]);
-  const [stats, setStats] = useState({ total: 0, done: 0, processing: 0, errors: 0 });
   const pollRef = useRef(null);
 
-  useEffect(() => { fetchHistory(); fetchStats(); }, []);
+  useEffect(() => { fetchHistory(); }, []);
 
   useEffect(() => {
     if (currentItem?.status === 'processing') {
@@ -143,16 +142,13 @@ export default function App() {
   const fetchHistory = async () => {
     try { const { data } = await axios.get(`${API}/api/history/`); setHistory(data.results); } catch {}
   };
-  const fetchStats = async () => {
-    try { const { data } = await axios.get(`${API}/api/stats/`); setStats(data); } catch {}
-  };
   const pollStatus = async (id) => {
     try {
       const { data } = await axios.get(`${API}/api/summaries/${id}/`);
       if (data.status !== 'processing') {
         clearInterval(pollRef.current);
         setCurrentItem(data);
-        fetchHistory(); fetchStats();
+        fetchHistory();
         if (data.status === 'done') toast.success('Summary ready!');
         else toast.error('Processing failed.');
       }
@@ -170,7 +166,6 @@ export default function App() {
       const { data } = await axios.post(`${API}/api/upload/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setCurrentItem(data);
       toast.success('Uploaded! Transcribing now…');
-      fetchStats();
     } catch (err) {
       toast.error(err.response?.data?.file?.[0] || 'Upload failed. Try again.');
     } finally { setUploading(false); }
@@ -208,12 +203,6 @@ export default function App() {
       </header>
 
       <main className="main">
-        <div className="stats-row">
-          <StatCard label="Total" value={stats.total} accent="var(--accent)" />
-          <StatCard label="Done" value={stats.done} accent="var(--green)" />
-          <StatCard label="Processing" value={stats.processing} accent="var(--yellow)" />
-          <StatCard label="Errors" value={stats.errors} accent="var(--red)" />
-        </div>
 
         {view === 'upload' && (
           <div className="upload-view">
