@@ -22,15 +22,6 @@ const STATUS_META = {
   error:      { label: 'Error',       color: 'var(--red)',    icon: <AlertCircle size={14} /> },
 };
 
-
-  return (
-    <div className="stat-card" style={{ borderColor: accent }}>
-      <div className="stat-value" style={{ color: accent }}>{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
-
 function SummaryCard({ item, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
@@ -142,6 +133,7 @@ export default function App() {
   const fetchHistory = async () => {
     try { const { data } = await axios.get(`${API}/api/history/`); setHistory(data.results); } catch {}
   };
+
   const pollStatus = async (id) => {
     try {
       const { data } = await axios.get(`${API}/api/summaries/${id}/`);
@@ -180,13 +172,14 @@ export default function App() {
       await axios.delete(`${API}/api/summaries/${id}/`);
       setHistory(h => h.filter(i => i.id !== id));
       if (currentItem?.id === id) setCurrentItem(null);
-      fetchStats(); toast.success('Deleted.');
+      toast.success('Deleted.');
     } catch { toast.error('Could not delete.'); }
   };
 
   return (
     <div className="app">
       <Toaster position="top-right" toastOptions={{ style: { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' } }} />
+
       <header className="header">
         <div className="header-inner">
           <div className="logo">
@@ -195,7 +188,7 @@ export default function App() {
           </div>
           <nav className="nav">
             <button className={`nav-btn ${view === 'upload' ? 'active' : ''}`} onClick={() => setView('upload')}>Upload</button>
-            <button className={`nav-btn ${view === 'history' ? 'active' : ''}`} onClick={() => { setView('history'); fetchHistory(); fetchStats(); }}>
+            <button className={`nav-btn ${view === 'history' ? 'active' : ''}`} onClick={() => { setView('history'); fetchHistory(); }}>
               <History size={14} /> History
             </button>
           </nav>
@@ -203,7 +196,6 @@ export default function App() {
       </header>
 
       <main className="main">
-
         {view === 'upload' && (
           <div className="upload-view">
             <div className="upload-hero">
