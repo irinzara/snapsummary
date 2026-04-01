@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404
 
 from .models import Summary
 from .serializers import SummarySerializer, UploadSerializer
-from .ai_service import process_file
+from .ai_service import process_file, chat_with_file
 
 DOCUMENT_TYPES = {'.pdf', '.txt'}
 
@@ -74,3 +74,28 @@ class StatsView(APIView):
             'processing': Summary.objects.filter(status='processing').count(),
             'errors': Summary.objects.filter(status='error').count(),
         })
+
+
+class ChatView(APIView):
+    def post(self, request, pk):
+        summary = get_object_or_404(Summary, pk=pk)
+
+        if summary.status != 'done':
+            return Response({'error': 'File is still processing.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not summary.transcript:
+            return Response({'error': 'No content available to chat about.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        question = request.data.get('question', '').strip()
+        if not question:
+            return Response({'error': 'Please provide a question.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            answer = chat_with_file(
+                transcript=summary.transcript,
+                filename=summary.original_filename,
+                question=question,
+            )
+            return Response({'answer': answer})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

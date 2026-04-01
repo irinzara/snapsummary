@@ -66,7 +66,6 @@ def transcribe_audio(file_path: str) -> dict:
 
 def summarize_text(text: str, filename: str, content_type: str = 'auto') -> str:
     client = get_client()
-
     if content_type == 'document':
         instruction = "The following is extracted text from a document."
     else:
@@ -109,6 +108,31 @@ Format your response exactly like this:
     return response.choices[0].message.content.strip()
 
 
+def chat_with_file(transcript: str, filename: str, question: str) -> str:
+    client = get_client()
+    prompt = f"""You are a helpful assistant that answers questions based on the content of a file.
+
+File name: "{filename}"
+
+File content:
+{transcript[:6000]}
+
+Answer the following question based ONLY on the content above. If the answer is not in the content, say "I couldn't find that information in the file."
+
+Question: {question}
+"""
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": "You answer questions based on provided file content only."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=600,
+        temperature=0.2,
+    )
+    return response.choices[0].message.content.strip()
+
+
 def process_file(summary_instance) -> None:
     try:
         file_path = summary_instance.file.path
@@ -120,14 +144,12 @@ def process_file(summary_instance) -> None:
             summary_instance.language = 'text'
             summary_instance.duration_seconds = None
             summary_text = summarize_text(text, summary_instance.original_filename, 'document')
-
         elif ext == '.txt':
             text = extract_text_from_txt(file_path)
             summary_instance.transcript = text
             summary_instance.language = 'text'
             summary_instance.duration_seconds = None
             summary_text = summarize_text(text, summary_instance.original_filename, 'document')
-
         else:
             transcription = transcribe_audio(file_path)
             summary_instance.transcript = transcription['text']
