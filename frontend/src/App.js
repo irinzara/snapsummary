@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 import {
-  FileVideo, FileAudio, CheckCircle, AlertCircle, Trash2,
+  FileVideo, FileAudio, FileText, CheckCircle, AlertCircle, Trash2,
   ChevronDown, ChevronUp, Loader, Zap, History, Copy, Download
 } from 'lucide-react';
 import './App.css';
@@ -48,7 +48,7 @@ function SummaryCard({ item, onDelete }) {
       <div className="summary-card-header" onClick={() => item.status === 'done' && setExpanded(!expanded)}>
         <div className="summary-card-left">
           <div className="file-icon">
-            {item.file_type === 'video' ? <FileVideo size={20} /> : <FileAudio size={20} />}
+            {item.file_type === 'video' ? <FileVideo size={20} /> : item.file_type === 'document' ? <FileText size={20} /> : <FileAudio size={20} />}
           </div>
           <div className="summary-card-info">
             <div className="summary-filename">{item.original_filename}</div>
@@ -164,7 +164,7 @@ export default function App() {
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop, accept: { 'video/*': [], 'audio/*': [] }, maxFiles: 1, disabled: uploading,
+    onDrop, accept: { 'video/*': [], 'audio/*': [], 'application/pdf': [], 'text/plain': [] }, maxFiles: 1, disabled: uploading,
   });
 
   const deleteItem = async (id) => {
@@ -209,7 +209,7 @@ export default function App() {
                 ) : isDragActive ? (
                   <p className="drop-title">Drop it!</p>
                 ) : (
-                  <><p className="drop-title">Upload any audio or video</p><p className="drop-hint">MP4, MOV, AVI, MP3, WAV, OGG — max 50MB</p></>
+                  <><p className="drop-title">Upload any audio or video</p><p className="drop-hint">Video, Audio, PDF, TXT — max 50MB</p></>
                 )}
               </div>
             </div>
