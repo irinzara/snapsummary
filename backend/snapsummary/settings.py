@@ -53,17 +53,16 @@ WSGI_APPLICATION = 'snapsummary.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'snapsummary'),
-        'USER': os.environ.get('DB_USER', 'snapuser'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'snappass'),
+        'NAME': os.environ.get('DB_NAME', 'postgres'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '6543'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
         'OPTIONS': {
-            'connect_timeout': 10,
             'sslmode': 'require',
         },
-        'CONN_MAX_AGE': 60,
-        'CONN_HEALTH_CHECKS': True,
+        'CONN_MAX_AGE': 0,
+        'CONN_HEALTH_CHECKS': False,
     }
 }
 
