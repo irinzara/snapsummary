@@ -5,7 +5,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gcc \
-    default-libmysqlclient-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,4 +15,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:${PORT:-8000}"
+CMD sh -c "python manage.py migrate --verbosity 2 && python manage.py runserver 0.0.0.0:${PORT:-8000} --verbosity 2"
