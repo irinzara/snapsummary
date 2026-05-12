@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
+from django.db import connection
 
 from .models import Summary
 from .serializers import SummarySerializer, UploadSerializer
@@ -74,6 +75,16 @@ class StatsView(APIView):
             'processing': Summary.objects.filter(status='processing').count(),
             'errors': Summary.objects.filter(status='error').count(),
         })
+
+
+class HealthView(APIView):
+    def get(self, request):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            return Response({'status': 'healthy', 'database': 'connected'}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'status': 'unhealthy', 'database': 'disconnected', 'error': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class ChatView(APIView):

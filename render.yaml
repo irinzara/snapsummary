@@ -5,29 +5,22 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
+    healthCheckPath: /api/health/
     envVars:
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: OPENAI_API_KEY
         sync: false
       - key: DB_NAME
-        value: snapsummary
+        value: postgres
       - key: DB_USER
-        fromDatabase:
-          name: snapsummary-db
-          property: user
+        value: postgres
       - key: DB_PASSWORD
-        fromDatabase:
-          name: snapsummary-db
-          property: password
+        sync: false
       - key: DB_HOST
-        fromDatabase:
-          name: snapsummary-db
-          property: host
+        sync: false
       - key: DB_PORT
-        fromDatabase:
-          name: snapsummary-db
-          property: port
+        value: 5432
 
   # ── React Frontend ──────────────────────────────────────────────
   - type: web
@@ -42,9 +35,3 @@ services:
           name: snapsummary-backend
           type: web
           property: host
-
-# ── MySQL Database ──────────────────────────────────────────────
-databases:
-  - name: snapsummary-db
-    databaseName: snapsummary
-    plan: free

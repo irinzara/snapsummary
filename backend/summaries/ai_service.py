@@ -1,6 +1,9 @@
 import os
+import logging
 from pathlib import Path
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 _client = None
 
@@ -49,19 +52,25 @@ def extract_text_from_txt(file_path: str) -> str:
 def transcribe_audio(file_path: str) -> dict:
     audio_path = extract_audio_if_needed(file_path)
     client = get_client()
-    with open(audio_path, 'rb') as f:
-        response = client.audio.transcriptions.create(
-            model="whisper-large-v3",
-            file=f,
-            response_format="verbose_json",
-        )
-    if audio_path != file_path and os.path.exists(audio_path):
-        os.remove(audio_path)
-    return {
-        'text': response.text,
-        'language': getattr(response, 'language', 'unknown'),
-        'duration': getattr(response, 'duration', None),
-    }
+    try:
+        with open(audio_path, 'rb') as f:
+            response = client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=f,
+                response_format="verbose_json",
+            )
+        if audio_path != file_path and os.path.exists(audio_path):
+            os.remove(audio_path)
+        return {
+            'text': response.text,
+            'language': getattr(response, 'language', 'unknown'),
+            'duration': getattr(response, 'duration', None),
+        }
+    except Exception as e:
+        logger.error(f"Transcription error: {str(e)}")
+        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
+            raise RuntimeError("Groq API rate limit or quota exceeded. Please try again later or upgrade your API plan.")
+        raise
 
 
 def summarize_text(text: str, filename: str, content_type: str = 'auto') -> str:
@@ -96,16 +105,22 @@ Format your response exactly like this:
 ## Content Type
 [e.g. Lecture / Report / Interview / Meeting / Article / Other]
 """
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": "You summarize content clearly and concisely."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=1000,
-        temperature=0.3,
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You summarize content clearly and concisely."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Summarization error: {str(e)}")
+        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
+            raise RuntimeError("Groq API rate limit or quota exceeded. Please try again later or upgrade your API plan.")
+        raise
 
 
 def chat_with_file(transcript: str, filename: str, question: str) -> str:
@@ -121,22 +136,29 @@ Answer the following question based ONLY on the content above. If the answer is 
 
 Question: {question}
 """
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": "You answer questions based on provided file content only."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=600,
-        temperature=0.2,
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You answer questions based on provided file content only."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=600,
+            temperature=0.2,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Chat error: {str(e)}")
+        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
+            raise RuntimeError("Groq API rate limit or quota exceeded. Please try again later or upgrade your API plan.")
+        raise
 
 
 def process_file(summary_instance) -> None:
     try:
         file_path = summary_instance.file.path
         ext = Path(file_path).suffix.lower()
+        logger.info(f"Processing file: {summary_instance.original_filename}, type: {ext}")
 
         if ext == '.pdf':
             text = extract_text_from_pdf(file_path)
@@ -160,8 +182,10 @@ def process_file(summary_instance) -> None:
         summary_instance.summary = summary_text
         summary_instance.status = 'done'
         summary_instance.save()
+        logger.info(f"Successfully processed: {summary_instance.original_filename}")
 
     except Exception as e:
+        logger.error(f"Error processing {summary_instance.original_filename}: {str(e)}", exc_info=True)
         summary_instance.status = 'error'
         summary_instance.error_message = str(e)
         summary_instance.save()

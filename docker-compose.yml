@@ -2,20 +2,19 @@ version: '3.9'
 
 services:
   db:
-    image: mysql:8.0
+    image: postgres:15
     container_name: snapsummary_db
     restart: always
     environment:
-      MYSQL_DATABASE: snapsummary
-      MYSQL_USER: snapuser
-      MYSQL_PASSWORD: snappass
-      MYSQL_ROOT_PASSWORD: rootpass
+      POSTGRES_DB: snapsummary
+      POSTGRES_USER: snapuser
+      POSTGRES_PASSWORD: snappass
     ports:
-      - "3307:3306"
+      - "5433:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "pg_isready -U snapuser"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -33,7 +32,7 @@ services:
       - DB_USER=snapuser
       - DB_PASSWORD=snappass
       - DB_HOST=db
-      - DB_PORT=3306
+      - DB_PORT=5432
     volumes:
       - ./backend:/app
       - media_files:/app/media
@@ -56,5 +55,5 @@ services:
       - backend
 
 volumes:
-  mysql_data:
+  postgres_data:
   media_files:

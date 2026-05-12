@@ -7,4 +7,5 @@ urlpatterns = [
     path('summaries/<int:pk>/chat/', views.ChatView.as_view(), name='chat'),
     path('history/', views.HistoryView.as_view(), name='history'),
     path('stats/', views.StatsView.as_view(), name='stats'),
+    path('health/', views.HealthView.as_view(), name='health'),
 ]
