@@ -57,9 +57,10 @@ DATABASES = {
         'USER': os.environ.get('DB_USER', 'snapuser'),
         'PASSWORD': os.environ.get('DB_PASSWORD', 'snappass'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+        'PORT': os.environ.get('DB_PORT', '6543'),
         'OPTIONS': {
             'connect_timeout': 10,
+            'sslmode': 'require',
         },
         'CONN_MAX_AGE': 60,
         'CONN_HEALTH_CHECKS': True,
