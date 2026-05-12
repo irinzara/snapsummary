@@ -11,16 +11,8 @@ services:
         generateValue: true
       - key: OPENAI_API_KEY
         sync: false
-      - key: DB_NAME
-        value: postgres
-      - key: DB_USER
-        value: postgres
-      - key: DB_PASSWORD
+      - key: DATABASE_URL
         sync: false
-      - key: DB_HOST
-        sync: false
-      - key: DB_PORT
-        value: 5432
 
   # ── React Frontend ──────────────────────────────────────────────
   - type: web
