@@ -53,11 +53,12 @@ WSGI_APPLICATION = 'snapsummary.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        'NAME': os.path.join(os.environ.get('DATA_DIR', BASE_DIR), 'db.sqlite3'),
     }
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = os.environ.get('DEBUG', 'False') == 'True'
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', 'https://snapsummary-frontend.vercel.app,http://localhost:3000').split(',')
 
 REST_FRAMEWORK = {
     'DEFAULT_PARSER_CLASSES': [
@@ -70,6 +71,10 @@ REST_FRAMEWORK = {
 # Media files (uploaded audio/video)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(os.environ.get('DATA_DIR', BASE_DIR), 'media')
+
+# Static files
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Max upload size: 50MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
