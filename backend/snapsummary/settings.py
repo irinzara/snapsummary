@@ -16,7 +16,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
-    'django_rq',
     'summaries',
 ]
 
@@ -114,12 +113,4 @@ LOGGING = {
             'propagate': False,
         },
     },
-}
-
-# Django RQ (Redis Queue) for background tasks
-RQ_QUEUES = {
-    'default': {
-        'URL': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
-        'DEFAULT_TIMEOUT': 3600,
-    }
 }

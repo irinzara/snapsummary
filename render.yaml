@@ -15,44 +15,10 @@ services:
         value: False
       - key: ALLOWED_HOSTS
         value: snapsummary-backend.onrender.com
-      - key: REDIS_URL
-        sync: false
     disk:
       name: data
       mountPath: /app/data
       sizeGB: 1
-
-  # ── Redis Worker for Background Tasks ─────────────────────────────
-  - type: worker
-    name: snapsummary-worker
-    runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    envVars:
-      - key: DJANGO_SECRET_KEY
-        fromService:
-          name: snapsummary-backend
-          type: web
-          property: env.DJANGO_SECRET_KEY
-      - key: OPENAI_API_KEY
-        fromService:
-          name: snapsummary-backend
-          type: web
-          property: env.OPENAI_API_KEY
-      - key: DEBUG
-        value: False
-      - key: REDIS_URL
-        fromService:
-          name: snapsummary-backend
-          type: web
-          property: env.REDIS_URL
-      - key: DATA_DIR
-        value: /app/data
-    disk:
-      name: data
-      mountPath: /app/data
-      sizeGB: 1
-    command: python manage.py rqworker
 
   # ── React Frontend ──────────────────────────────────────────────
   - type: web

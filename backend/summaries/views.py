@@ -6,7 +6,6 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 from django.db import connection
-import django_rq
 
 from .models import Summary
 from .serializers import SummarySerializer, UploadSerializer
@@ -41,7 +40,9 @@ class UploadView(APIView):
             status='processing',
         )
 
-        django_rq.enqueue(process_file, summary)
+        thread = threading.Thread(target=process_file, args=(summary,))
+        thread.daemon = False
+        thread.start()
 
         return Response(SummarySerializer(summary).data, status=status.HTTP_201_CREATED)
 
