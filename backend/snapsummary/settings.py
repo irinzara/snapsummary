@@ -4,8 +4,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-secret-key-change-in-production')
-DEBUG = True
-ALLOWED_HOSTS = ['*']
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',') if os.environ.get('ALLOWED_HOSTS') else ['*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'django_rq',
     'summaries',
 ]
 
@@ -69,7 +70,7 @@ REST_FRAMEWORK = {
 
 # Media files (uploaded audio/video)
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_ROOT = os.path.join(os.environ.get('DATA_DIR', BASE_DIR), 'media')
 
 # Max upload size: 50MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
@@ -113,4 +114,12 @@ LOGGING = {
             'propagate': False,
         },
     },
+}
+
+# Django RQ (Redis Queue) for background tasks
+RQ_QUEUES = {
+    'default': {
+        'URL': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
+        'DEFAULT_TIMEOUT': 3600,
+    }
 }
