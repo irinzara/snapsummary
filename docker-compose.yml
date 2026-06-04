@@ -28,11 +28,6 @@ services:
     environment:
       - DJANGO_SECRET_KEY=your-secret-key-change-in-production
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - DB_NAME=snapsummary
-      - DB_USER=snapuser
-      - DB_PASSWORD=snappass
-      - DB_HOST=db
-      - DB_PORT=5432
     volumes:
       - ./backend:/app
       - media_files:/app/media
@@ -43,9 +38,7 @@ services:
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
 
-  frontend:
-    build: ./frontend
-    container_name: snapsummary_frontend
+  frontend: []ontend
     restart: always
     ports:
       - "3000:3000"
