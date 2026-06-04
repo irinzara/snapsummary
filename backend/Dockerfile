@@ -20,7 +20,7 @@ ENV DJANGO_SETTINGS_MODULE=snapsummary.settings
 
 EXPOSE 8000
 
-# Collect static files and run migrations
-RUN python manage.py collectstatic --noinput || true
+# Collect static files (ignore if no static files)
+RUN python manage.py collectstatic --noinput 2>/dev/null || echo "No static files to collect"
 
 CMD sh -c "python manage.py migrate --verbosity 2 && python manage.py runserver 0.0.0.0:${PORT:-8000} --verbosity 2"
