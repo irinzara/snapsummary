@@ -1,0 +1,496 @@
+# SnapSummary: End-to-End Technical Documentation & System Report
+
+Welcome to the comprehensive technical documentation for **SnapSummary**, an AI-powered document, audio, and video summarization platform that includes **Aira**, an interactive chat assistant powered by Retrieval-Augmented Generation (RAG).
+
+This document details the system architecture, technology stack, execution pipelines, API endpoints, file structures, identified design flaws/vulnerabilities, and deployment configurations of the project.
+
+---
+
+## Table of Contents
+1. [System Architecture & Data Flow](#system-architecture--data-flow)
+2. [Technology Stack](#technology-stack)
+3. [Database Schema](#database-schema)
+4. [End-to-End Execution Pipelines](#end-to-end-execution-pipelines)
+   - [File Upload & Initial Validation](#1-file-upload--initial-validation)
+   - [Asynchronous Extraction & Transcription Pipeline](#2-asynchronous-extraction--transcription-pipeline)
+   - [Groq AI Summarization](#3-groq-ai-summarization)
+   - [Aira Interactive Chat (RAG)](#4-aira-interactive-chat-rag)
+5. [API Endpoint Reference](#api-endpoint-reference)
+6. [Codebase File-by-File Breakdown](#codebase-file-by-file-breakdown)
+7. [Identified Codebase Discrepancies & Security Vulnerabilities](#identified-codebase-discrepancies--security-vulnerabilities)
+8. [Local Development & Production Infrastructure](#local-development--production-infrastructure)
+9. [Future Roadmap & Architecture Enhancements](#future-roadmap--architecture-enhancements)
+
+---
+
+## System Architecture & Data Flow
+
+SnapSummary is structured as a decoupled web application containing a **React SPA (Single Page Application)** frontend and a **Django REST Framework (DRF)** backend API. It leverages **Groq cloud services** for fast, hardware-accelerated AI models (Llama 3.3 and Whisper Large V3) and uses **FFmpeg** on the host operating system for media file preparation.
+
+### System Architecture Diagram
+
+```mermaid
+graph TD
+    User([User Client]) <-->|React UI / axios| FE[React Frontend SPA]
+    FE <-->|REST API / JSON / Multipart| BE[Django REST Framework Backend]
+    BE <-->|Read/Write| DB[(SQLite Database)]
+    BE -->|1. Create Async Thread| TH[Background Thread]
+    TH -->|FFmpeg Command Line| FF[Host OS FFmpeg]
+    TH -->|pdfplumber / txt read| PDF[Text Extractor]
+    TH <-->|HTTPS REST API| Groq[Groq API Services]
+    Groq <-->|Transcription| Whisper[Whisper Large V3]
+    Groq <-->|Summarization & QA Chat| LLaMA[LLaMA 3.3 70B Versatile]
+```
+
+### Main Operations Loop
+
+1. **Upload & Ingestion**: The React frontend validates the chosen file and transmits it via `FormData` to `/api/upload/`.
+2. **Persistence**: The backend database records a new summary row with status `processing`.
+3. **Threading**: The server starts a new Python background thread (non-daemon) to handle processing without blocking the API response, returning `201 Created` with the ID to the client immediately.
+4. **Extraction & AI**: The thread extracts text from documents or converts media into an MP3 file (using shell calls to `ffmpeg`) and sends it to the Groq APIs. The resulting text transcript is passed to Groq LLaMA 3.3 to create a structured summary.
+5. **Polling**: The React frontend polls `/api/summaries/{id}/` every 3 seconds. Once the background processing finishes, status shifts to `done` or `error`, updating the UI state.
+6. **Chat (RAG)**: Users engage in a factual QA session with Aira (chatbot) based exclusively on the extracted text, sending inquiries to `/api/summaries/{id}/chat/`.
+
+---
+
+## Technology Stack
+
+The stack is curated to optimize responsiveness, avoid unnecessary packages, and leverage free cloud services.
+
+### Frontend
+* **Core Library**: React v18.2.0
+* **Build tool**: react-scripts v5.0.1 (Create React App utility template)
+* **File Upload Component**: `react-dropzone` v14.2.3 (drag-and-drop handling)
+* **HTTP Client**: `axios` v1.6.7
+* **Notifications**: `react-hot-toast` v2.4.1 (elegant popups)
+* **Icons**: `lucide-react` v0.330.0 (clean outline iconography)
+* **Styling**: Pure CSS (vanilla stylesheets; custom classes, grid systems, flex layouts, CSS custom variables)
+
+### Backend API
+* **Base Web Engine**: Django v4.2.9
+* **REST API Layer**: Django REST Framework (DRF) v3.14.0
+* **Cross-Origin Requests**: `django-cors-headers` v4.3.1
+* **Security & Cryptography**: `cryptography`
+* **Configuration Loader**: `python-dotenv` v1.0.1
+* **Image Utilities**: `Pillow` v10.2.0
+* **Audio Handlers**: `pydub` v0.25.1
+* **PDF Analysis Engine**: `pdfplumber` v0.11.0 (replaces heavier packages like PyPDF2 for superior text extraction accuracy)
+* **External HTTP Requests**: `httpx` v0.27.2
+* **AI Provider Client**: `groq` v0.11.0
+
+### AI/ML Engines (via Groq API)
+* **Audio Transcription**: `whisper-large-v3` (highly accurate multilingual speech-to-text translation and timestamp detection)
+* **Summarization & Dialog Chat (Aira)**: `llama-3.3-70b-versatile` (advanced LLM with low-latency execution and high context quality)
+
+### Infrastructure & Operations
+* **Local Development Database**: PostgreSQL 15 (defined in Docker Compose, though SQLite is active by default; see anomalies)
+* **Production Database**: SQLite with persistent mount points
+* **Containerization**: Docker & Docker Compose
+* **CI/CD Platform**: GitHub Actions (running configuration checks and executing deployment webhooks)
+* **Web Services Hosting**: Render (using Docker environments for the API, Node server for the UI)
+
+---
+
+## Database Schema
+
+The database relies on a single-table design (`summaries`) to keep transactions and reads extremely fast.
+
+### `Summary` Model Configuration
+
+* **DB Table Name**: `summaries`
+* **Default Order**: `-created_at` (latest items display first)
+
+| Column Name | Database Data Type | Description / Notes | Constraints |
+| :--- | :--- | :--- | :--- |
+| `id` | `BigAutoField` (Integer) | Primary key, automatically incremented | Primary Key, Unique |
+| `original_filename` | `varchar(255)` | Preserves the name of the file uploaded by the user | Required |
+| `file` | `varchar(100)` | Relative path to the uploaded file in media directories | `upload_to='uploads/'` |
+| `file_size` | `bigint` | File size stored in bytes | Required |
+| `file_type` | `varchar(20)` | Categories: `document`, `audio`, or `video` | Required |
+| `status` | `varchar(20)` | Tracks current processing cycle: `processing`, `done`, or `error` | Default: `'processing'` |
+| `error_message` | `text` | Trace or custom error message if status is set to `error` | Nullable, Blankable |
+| `transcript` | `text` | Raw text extracted from document or transcribed by Whisper | Nullable, Blankable |
+| `summary` | `text` | Structurally generated markdown summary from Groq LLaMA | Nullable, Blankable |
+| `language` | `varchar(50)` | Identified language (e.g. `'en'` from audio, or `'text'` for files) | Nullable, Blankable |
+| `duration_seconds` | `double precision` | Running length of audio or video files | Nullable, Blankable |
+| `created_at` | `datetime` | Creation timestamp | `auto_now_add=True` |
+| `updated_at` | `datetime` | Latest timestamp change | `auto_now=True` |
+
+### Django Model Computed Properties
+* **`file_size_mb`**: Divides the database `file_size` (bytes) by `1,048,576` ($1024^2$) and rounds the outcome to 2 decimal places to output size in megabytes.
+
+---
+
+## End-to-End Execution Pipelines
+
+### 1. File Upload & Initial Validation
+```
+[User Interface]                     [API View (UploadView)]              [Serializer (UploadSerializer)]
+   Select File -------> Validate Size ------> POST /api/upload/ ---------> Validation Check
+                             | (Dropzone)                                       |
+                             |                                          - Limit: 50MB (52,428,800 bytes)
+                             v                                          - MIME Checks (audio, video, PDF, TXT)
+                        Fail: Toast Message                              - Extension Match Check
+                                                                                |
+                                                                                v
+                                                                        Success: Create Summary DB Entry
+```
+
+### 2. Asynchronous Extraction & Transcription Pipeline
+Upon creation of the DB entry, a new thread executes the orchestrator function: `process_file(summary_instance)`.
+
+```mermaid
+flowchart TD
+    Start[process_file Start] --> CheckExt{Check File Extension}
+    
+    CheckExt -->|PDF| PdfPlumber[Extract via pdfplumber]
+    CheckExt -->|TXT| TxtRead[Read file with UTF-8, ignore errors]
+    CheckExt -->|Audio / Video| MatchType{Is format native MP3/WAV?}
+    
+    MatchType -->|Yes| WhisperAPI[Send directly to Groq Whisper v3]
+    MatchType -->|No| FFmpegConvert[Convert to MP3 using ffmpeg shell command] --> WhisperAPI
+    
+    PdfPlumber --> UpdateModel[Update transcript, set language='text', duration=None]
+    TxtRead --> UpdateModel
+    WhisperAPI --> UpdateModelAudio[Update transcript, language=detected_language, duration=seconds]
+    
+    UpdateModel --> Summarize[Call summarize_text]
+    UpdateModelAudio --> Summarize
+    
+    Summarize --> SuccessSave[Set status='done', save summary]
+    
+    %% Error Handling
+    PdfPlumber -.->|Error| ErrorHandler[Save exception description to error_message, set status='error']
+    TxtRead -.->|Error| ErrorHandler
+    FFmpegConvert -.->|Error| ErrorHandler
+    WhisperAPI -.->|Error| ErrorHandler
+    Summarize -.->|Error| ErrorHandler
+```
+
+* **FFmpeg Conversion Command**: 
+  ```bash
+  ffmpeg -i "<input_file>" -vn -acodec mp3 -q:a 2 "<output_file_audio.mp3>" -y -loglevel quiet
+  ```
+  Once transcription finishes, the temporary `_audio.mp3` file is deleted from the filesystem using Python's `os.remove()`.
+
+### 3. Groq AI Summarization
+The backend retrieves the extracted text and sends it to `llama-3.3-70b-versatile` through the Groq client.
+
+* **Truncation Safeguard**: Because LLMs have limits on context sizes and API cost controls, only the first **`6000` characters** of the transcript are passed as context to the API.
+* **System Message**: `"You summarize content clearly and concisely."`
+* **Temperature Setting**: `0.3` (low temperature to guarantee factual alignment and format consistency).
+* **Generation Limits**: `max_tokens=1000`.
+* **Standard Prompt Structure**:
+  ```text
+  You are an expert at summarizing content clearly and concisely.
+
+  [Instruction] File name: "{filename}"
+
+  Your task:
+  1. Write a clear, concise summary (3-5 sentences) of the main content
+  2. List the KEY POINTS as bullet points (max 7 points)
+  3. Note the content type (e.g. Lecture, Interview, Report, Article, Meeting, Podcast, etc.)
+
+  Content:
+  {truncated_transcript_text_6000_chars}
+
+  Format your response exactly like this:
+
+  ## Summary
+  [Your 3-5 sentence summary here]
+
+  ## Key Points
+  • [Point 1]
+  • [Point 2]
+  • [Point 3]
+
+  ## Content Type
+  [e.g. Lecture / Report / Interview / Meeting / Article / Other]
+  ```
+
+### 4. Aira Interactive Chat (RAG)
+Users ask questions about their summarized documents through a sidebar UI panel.
+
+* **Context Injection**: Uses simple context stuffing. It grabs the first `6000` characters of the cached `transcript` field from the database.
+* **Model Parameters**: Uses `llama-3.3-70b-versatile` with `temperature=0.2` (minimizing hallucinations), `max_tokens=600`, and a strict system directive: `"You answer questions based on provided file content only."`
+* **QA Prompt Structure**:
+  ```text
+  You are a helpful assistant that answers questions based on the content of a file.
+
+  File name: "{filename}"
+
+  File content:
+  {truncated_transcript_text_6000_chars}
+
+  Answer the following question based ONLY on the content above. If the answer is not in the content, say "I couldn't find that information in the file."
+
+  Question: {user_question}
+  ```
+
+---
+
+## API Endpoint Reference
+
+All endpoints expect headers `Accept: application/json` and return JSON payloads (except `DELETE /api/summaries/{id}/`).
+
+### 1. File Ingestion
+* **Endpoint**: `POST /api/upload/`
+* **Headers**: `Content-Type: multipart/form-data`
+* **Payload**: Form-data body containing a key `file` mapping to the file binary.
+* **Response (Success - `201 Created`)**:
+  ```json
+  {
+    "id": 12,
+    "original_filename": "lecture_audio.mp4",
+    "file_size": 1204856,
+    "file_size_mb": 1.15,
+    "file_type": "video",
+    "status": "processing",
+    "error_message": null,
+    "transcript": null,
+    "summary": null,
+    "language": null,
+    "duration_seconds": null,
+    "created_at": "2026-06-15T15:10:00.000Z",
+    "updated_at": "2026-06-15T15:10:00.000Z"
+  }
+  ```
+* **Response (Validation Error - `400 Bad Request`)**:
+  ```json
+  {
+    "file": [
+      "File too large. Max size is 50MB. Your file is 62.4MB."
+    ]
+  }
+  ```
+
+### 2. Status Tracking & Retrieval
+* **Endpoint**: `GET /api/summaries/{id}/`
+* **Response (Status - `200 OK`)**:
+  ```json
+  {
+    "id": 12,
+    "original_filename": "lecture_audio.mp4",
+    "file_size": 1204856,
+    "file_size_mb": 1.15,
+    "file_type": "video",
+    "status": "done",
+    "error_message": null,
+    "transcript": "Good morning class, today we will review...",
+    "summary": "## Summary\nThe instructor explains class structures...\n\n## Key Points\n• Introduction to syntax...",
+    "language": "en",
+    "duration_seconds": 120.4,
+    "created_at": "2026-06-15T15:10:00.000Z",
+    "updated_at": "2026-06-15T15:12:00.000Z"
+  }
+  ```
+
+### 3. File Context Q&A
+* **Endpoint**: `POST /api/summaries/{id}/chat/`
+* **Payload**: 
+  ```json
+  {
+    "question": "What topics will be covered on the midterm exam?"
+  }
+  ```
+* **Response (Success - `200 OK`)**:
+  ```json
+  {
+    "answer": "According to the transcript, the midterm exam will cover basic syntax, functions, and object-oriented programming concepts."
+  }
+  ```
+* **Response (Conflict - `400 Bad Request`)**:
+  ```json
+  {
+    "error": "File is still processing."
+  }
+  ```
+
+### 4. Fetch History
+* **Endpoint**: `GET /api/history/`
+* **Response (`200 OK`)**:
+  ```json
+  {
+    "count": 1,
+    "results": [
+      {
+        "id": 12,
+        "original_filename": "lecture_audio.mp4",
+        "file_size_mb": 1.15,
+        "status": "done"
+        // ... full Summary attributes
+      }
+    ]
+  }
+  ```
+
+### 5. Remove Record
+* **Endpoint**: `DELETE /api/summaries/{id}/`
+* **Action**: Deletes the physical file from the backend media storage folder, deletes the database entry, and returns an empty body.
+* **Response (`204 No Content`)**: Empty body.
+
+### 6. System Diagnostics
+* **Endpoint**: `GET /api/stats/`
+* **Response (`200 OK`)**:
+  ```json
+  {
+    "total": 4,
+    "done": 3,
+    "processing": 0,
+    "errors": 1
+  }
+  ```
+
+### 7. Health Status
+* **Endpoint**: `GET /api/health/`
+* **Response (`200 OK` or `503 Service Unavailable`)**:
+  ```json
+  {
+    "status": "healthy",
+    "database": "connected"
+  }
+  ```
+
+---
+
+## Codebase File-by-File Breakdown
+
+### Backend Files (`/backend`)
+* [requirements.txt](file:///c:/Projects/snapsummary/backend/requirements.txt): Lists Python libraries for project execution. Key libraries include `Django`, `djangorestframework`, `groq`, `pdfplumber`, `pydub`, and `python-dotenv`.
+* [manage.py](file:///c:/Projects/snapsummary/backend/manage.py): Standard Django CLI interface entrypoint script.
+* [snapsummary/settings.py](file:///c:/Projects/snapsummary/backend/snapsummary/settings.py): Application config. Defines CORS policies, logging structures (formatted under the `verbose` logger to output standard console stdout), file sizes (50MB uploads limit), and path setups (`/app/data` for production). Uses SQLite by default.
+* [snapsummary/urls.py](file:///c:/Projects/snapsummary/backend/snapsummary/urls.py): Root URL definitions. Redirects `/api/` matching routes to `summaries.urls`, sets up `/admin`, and mounts static and media URL routers.
+* [summaries/models.py](file:///c:/Projects/snapsummary/backend/summaries/models.py): Defines the `Summary` schema. Contains structural logic for recording audio, video, and documents, along with standard status definitions and the `file_size_mb` computed property.
+* [summaries/serializers.py](file:///c:/Projects/snapsummary/backend/summaries/serializers.py): 
+  - `SummarySerializer` manages database data translation to JSON.
+  - `UploadSerializer` executes validation checks (size limits, file extensions, and MIME formats).
+* [summaries/ai_service.py](file:///c:/Projects/snapsummary/backend/summaries/ai_service.py): Core processing logic. Initializes the global Groq API client singleton using environment variables. Hosts PDF extraction (`pdfplumber`), text file reading, audio extraction (`ffmpeg`), Whisper speech-to-text, and LLaMA completion engines.
+* [summaries/views.py](file:///c:/Projects/snapsummary/backend/summaries/views.py): Implements Django class-based API views (`UploadView`, `SummaryDetailView`, `HistoryView`, `StatsView`, `HealthView`, and `ChatView`). Offloads the ingestion process to a separate non-daemon thread.
+* [summaries/urls.py](file:///c:/Projects/snapsummary/backend/summaries/urls.py): Routes URLs to their respective backend view logic.
+* [Dockerfile](file:///c:/Projects/snapsummary/backend/Dockerfile): Base environment definition using `python:3.11-slim`. Installs `ffmpeg`, `gcc`, and `pkg-config` system dependencies. Automatically executes DB migrations and starts the Django server.
+
+### Frontend Files (`/frontend`)
+* [package.json](file:///c:/Projects/snapsummary/frontend/package.json): Lists Node runtime dependencies (`react`, `axios`, `react-dropzone`, `react-hot-toast`, `lucide-react`). Sets up local proxy rules to forward frontend requests to `http://backend:8000`.
+* [src/index.js](file:///c:/Projects/snapsummary/frontend/src/index.js): Entrypoint for mounting the React virtual DOM tree.
+* [src/index.css](file:///c:/Projects/snapsummary/frontend/src/index.css): Sets CSS variables for layout colors and dark-mode options.
+* [src/App.js](file:///c:/Projects/snapsummary/frontend/src/App.js): Single-component React implementation managing:
+  - Navigation views (`Upload` and `History`).
+  - Dropzone drag-and-drop ingestion handlers.
+  - Polling interval loop (queries current processing status every 3s).
+  - Component hierarchy: `SummaryCard`, `AiraChatPanel`, `AiraFloatingBtn`, and custom avatar SVGs.
+* [src/App.css](file:///c:/Projects/snapsummary/frontend/src/App.css): Layout styles. Defines animations (pulsing effects, loading spinners, typing dots), glassmorphism design variables, responsive grid breakpoints, scroll custom styles, and dark themes.
+
+### Configuration & Tooling Files
+* [docker-compose.yml](file:///c:/Projects/snapsummary/docker-compose.yml): Coordinates local orchestration. Spins up:
+  - `db` (Postgres 15 on port 5433).
+  - `backend` (Django web service on port 8000).
+  - `frontend` (React web server on port 3000).
+* [render.yaml](file:///c:/Projects/snapsummary/render.yaml): Production blueprints for Render. Spins up the backend container with persistent volume storage disk mounts (1GB for SQLite/media) and sets up the frontend Node static server.
+* [.env.example](file:///c:/Projects/snapsummary/.env.example): Reference configuration showing required keys (`OPENAI_API_KEY`).
+* [.github/workflows/deploy.yml](file:///c:/Projects/snapsummary/.github/workflows/deploy.yml): CI/CD script. Runs standard Django code sanity checks (`python manage.py check`) on every pull request or commit to `main`, and invokes Render webhook URLs on successful runs to pull and deploy changes.
+
+---
+
+## Identified Codebase Discrepancies & Security Vulnerabilities
+
+During this deep review, several security vulnerabilities, technical debt items, and configuration inconsistencies were discovered:
+
+### 1. Insecure Shell Command Execution (Command Injection Vulnerability)
+* **Location**: `backend/summaries/ai_service.py` [Line 26](file:///c:/Projects/snapsummary/backend/summaries/ai_service.py#L26)
+* **Code**:
+  ```python
+  os.system(f'ffmpeg -i "{file_path}" -vn -acodec mp3 -q:a 2 "{output_path}" -y -loglevel quiet')
+  ```
+* **Impact**: Critical security vulnerability. The system processes file paths uploaded directly by users. If a file is uploaded with a name like `"; rm -rf /; ".mp4`, it will be executed directly as shell commands inside the host OS/Docker container because `os.system` runs inside a system shell without sanitization.
+* **Remediation**: Use Python's built-in `subprocess` module with arguments passed as a list to disable shell interpretation:
+  ```python
+  import subprocess
+  subprocess.run([
+      'ffmpeg', '-i', file_path, '-vn', '-acodec', 'mp3',
+      '-q:a', '2', output_path, '-y', '-loglevel', 'quiet'
+  ], check=True)
+  ```
+
+### 2. SQLite Hardcoded Database Discrepancy
+* **Location**: `backend/snapsummary/settings.py` [Line 53-58](file:///c:/Projects/snapsummary/backend/snapsummary/settings.py#L53-L58)
+* **Details**: 
+  - `docker-compose.yml` sets up a PostgreSQL 15 database service (`db` port 5433).
+  - The project `README.md` states: `"Saved to MySQL 8.0"`.
+  - However, `settings.py` hardcodes:
+    ```python
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.path.join(os.environ.get('DATA_DIR', BASE_DIR), 'db.sqlite3'),
+        }
+    }
+    ```
+* **Impact**: The Postgres container configured in `docker-compose.yml` runs in the background but is never used. All data is saved to a local `db.sqlite3` file. Under high concurrent user loads, SQLite will lock tables and throw exceptions.
+
+### 3. Non-Daemon Thread Background Processing Risks
+* **Location**: `backend/summaries/views.py` [Line 43-45](file:///c:/Projects/snapsummary/backend/summaries/views.py#L43-L45)
+* **Code**:
+  ```python
+  thread = threading.Thread(target=process_file, args=(summary,))
+  thread.daemon = False
+  thread.start()
+  ```
+* **Impact**: Python threading is not recommended for production-grade task management. In serverless environments (like Render or Vercel), web processes can be terminated or cycled aggressively to free up system memory, which abruptly kills running threads mid-execution and leaves files stuck in a perpetual `'processing'` state.
+* **Remediation**: Implement a task queue system (such as Celery or RQ) backed by Redis to manage background jobs reliably.
+
+### 4. Direct Client IP Polling
+* **Location**: `frontend/src/App.js` [Line 287-291](file:///c:/Projects/snapsummary/frontend/src/App.js#L287-L291)
+* **Details**: The frontend uses `setInterval` to query the status of processing files every 3 seconds.
+* **Impact**: This creates a lot of unnecessary requests under heavy traffic, especially on lightweight server instances.
+* **Remediation**: Use WebSockets (Django Channels) or Server-Sent Events (SSE) to notify clients instantly when processing finishes.
+
+### 5. Hard Context Truncation Limit (6000 Characters)
+* **Location**: `backend/summaries/ai_service.py` [Line 93, 133](file:///c:/Projects/snapsummary/backend/summaries/ai_service.py#L93)
+* **Details**: Files are truncated using a hard slice limit: `transcript[:6000]`.
+* **Impact**: If a user uploads a large PDF or 1-hour audio transcript, only the first few minutes or pages will be analyzed. The rest of the content is discarded, leading to inaccurate summaries and chat responses.
+* **Remediation**: Chunk the document into smaller pieces, summarize those chunks, and combine the summaries. For the chatbot, implement a vector index (e.g. FAISS or Pinecone) to perform similarity retrieval on relevant context fragments.
+
+---
+
+## Local Development & Production Infrastructure
+
+### Local Configuration (Docker Compose)
+To start the services locally:
+1. Copy environmental variables: `cp .env.example .env`
+2. Populate the Groq API Key: `OPENAI_API_KEY=gsk_yourkeyhere` (note: the variable name is `OPENAI_API_KEY`, but the key itself must be a Groq API token).
+3. Spin up services: `docker-compose up --build`
+4. The system is available at:
+   - Frontend React UI: `http://localhost:3000`
+   - Backend API Service: `http://localhost:8000`
+
+### Production Hosting Configuration (Render)
+The project defines automated infrastructure configuration in [render.yaml](file:///c:/Projects/snapsummary/render.yaml):
+* **`snapsummary-backend`** (Web Service):
+  - Builds from `./backend/Dockerfile`.
+  - Attaches a **1GB persistent disk** mounted at `/app/data` to preserve the SQLite database and uploaded media files across deployments.
+  - Automatically runs `python manage.py migrate` and exposes port `8000`.
+* **`snapsummary-frontend`** (Static Web Server):
+  - Builds using `npm install && npm run build`.
+  - Served via `npx serve -s build`.
+  - Configures `REACT_APP_API_URL` to point to the backend service.
+
+---
+
+## Future Roadmap & Architecture Enhancements
+
+To upgrade SnapSummary from a hobby/learning project to a production-ready application:
+
+### Short-Term Priorities (1-2 Months)
+* **Fix Command Injection**: Replace `os.system` call with `subprocess.run` as detailed in the security section.
+* **Fix DB Settings**: Bind the database configuration to read environment variables (like `DATABASE_URL`) so it can connect to PostgreSQL in both docker-compose and production environments.
+* **Add JWT Authentication**: Set up Django REST Framework SimpleJWT or similar token authentication so users can register, log in, and view only their own uploaded summaries.
+
+### Medium-Term Priorities (3-6 Months)
+* **Integrate Celery & Redis**: Offload file processing from Python threads to Celery workers to prevent data loss when web servers cycle.
+* **Implement Document Chunking**: Divide long text transcripts into chunks (e.g. 2,000 words each), summarize them individually, and compile the summaries together to bypass context window limits.
+* **Integrate Vector Database**: Embed chunked text snippets using a lightweight model and save them to a local vector store (e.g., ChromaDB, PgVector) or external cloud service (e.g., Pinecone) to enable semantic retrieval for Aira chat.
+
+### Long-Term Priorities (6-12 Months)
+* **Streaming Responses**: Enable Server-Sent Events (SSE) to stream answers from Groq LLaMA word-by-word into the React UI chat panel.
+* **Webhooks / Event Notifications**: Replace the 3-second client polling mechanism with WebSockets to update file states dynamically.
+* **CDN File Storage**: Store uploaded files in Amazon S3 or Google Cloud Storage instead of the local server disk.

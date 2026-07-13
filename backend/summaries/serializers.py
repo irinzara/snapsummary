@@ -19,6 +19,10 @@ class SummarySerializer(serializers.ModelSerializer):
         ]
 
 
+class ChatSerializer(serializers.Serializer):
+    question = serializers.CharField(required=True)
+
+
 class UploadSerializer(serializers.Serializer):
     file = serializers.FileField()
 

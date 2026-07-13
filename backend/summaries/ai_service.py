@@ -1,158 +1,12 @@
-import os
 import logging
 from pathlib import Path
-from django.conf import settings
+
+# Implemented as orchestrator: business logic imported from submodules
+from .ai.extractors import extract_text_from_pdf, extract_text_from_txt
+from .ai.summarizer import transcribe_audio, summarize_text
+from .ai.rag_service import index_document
 
 logger = logging.getLogger(__name__)
-
-_client = None
-
-def get_client():
-    global _client
-    if _client is None:
-        from groq import Groq
-        _client = Groq(api_key=settings.OPENAI_API_KEY)
-    return _client
-
-AUDIO_VIDEO_SUPPORTED = {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm', '.ogg', '.flac', '.mov', '.avi'}
-TEXT_SUPPORTED = {'.pdf', '.txt'}
-
-
-def extract_audio_if_needed(file_path: str) -> str:
-    ext = Path(file_path).suffix.lower()
-    if ext in {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm', '.ogg', '.flac'}:
-        return file_path
-    output_path = file_path.replace(ext, '_audio.mp3')
-    os.system(f'ffmpeg -i "{file_path}" -vn -acodec mp3 -q:a 2 "{output_path}" -y -loglevel quiet')
-    return output_path if os.path.exists(output_path) else file_path
-
-
-def extract_text_from_pdf(file_path: str) -> str:
-    try:
-        import pdfplumber
-        text = ''
-        with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + '\n'
-        return text.strip()
-    except Exception as e:
-        raise RuntimeError(f"Failed to extract PDF text: {e}")
-
-
-def extract_text_from_txt(file_path: str) -> str:
-    try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            return f.read().strip()
-    except Exception as e:
-        raise RuntimeError(f"Failed to read text file: {e}")
-
-
-def transcribe_audio(file_path: str) -> dict:
-    audio_path = extract_audio_if_needed(file_path)
-    client = get_client()
-    try:
-        with open(audio_path, 'rb') as f:
-            response = client.audio.transcriptions.create(
-                model="whisper-large-v3",
-                file=f,
-                response_format="verbose_json",
-            )
-        if audio_path != file_path and os.path.exists(audio_path):
-            os.remove(audio_path)
-        return {
-            'text': response.text,
-            'language': getattr(response, 'language', 'unknown'),
-            'duration': getattr(response, 'duration', None),
-        }
-    except Exception as e:
-        logger.error(f"Transcription error: {str(e)}")
-        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            raise RuntimeError("Groq API rate limit or quota exceeded. Please try again later or upgrade your API plan.")
-        raise
-
-
-def summarize_text(text: str, filename: str, content_type: str = 'auto') -> str:
-    client = get_client()
-    if content_type == 'document':
-        instruction = "The following is extracted text from a document."
-    else:
-        instruction = "The following is a transcript from an audio/video file."
-
-    prompt = f"""You are an expert at summarizing content clearly and concisely.
-
-{instruction} File name: "{filename}"
-
-Your task:
-1. Write a clear, concise summary (3-5 sentences) of the main content
-2. List the KEY POINTS as bullet points (max 7 points)
-3. Note the content type (e.g. Lecture, Interview, Report, Article, Meeting, Podcast, etc.)
-
-Content:
-{text[:6000]}
-
-Format your response exactly like this:
-
-## Summary
-[Your 3-5 sentence summary here]
-
-## Key Points
-• [Point 1]
-• [Point 2]
-• [Point 3]
-
-## Content Type
-[e.g. Lecture / Report / Interview / Meeting / Article / Other]
-"""
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You summarize content clearly and concisely."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=1000,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"Summarization error: {str(e)}")
-        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            raise RuntimeError("Groq API rate limit or quota exceeded. Please try again later or upgrade your API plan.")
-        raise
-
-
-def chat_with_file(transcript: str, filename: str, question: str) -> str:
-    client = get_client()
-    prompt = f"""You are a helpful assistant that answers questions based on the content of a file.
-
-File name: "{filename}"
-
-File content:
-{transcript[:6000]}
-
-Answer the following question based ONLY on the content above. If the answer is not in the content, say "I couldn't find that information in the file."
-
-Question: {question}
-"""
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You answer questions based on provided file content only."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=600,
-            temperature=0.2,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"Chat error: {str(e)}")
-        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            raise RuntimeError("Groq API rate limit or quota exceeded. Please try again later or upgrade your API plan.")
-        raise
-
 
 def process_file(summary_instance) -> None:
     try:
@@ -162,31 +16,56 @@ def process_file(summary_instance) -> None:
 
         if ext == '.pdf':
             text = extract_text_from_pdf(file_path)
+            if not text.strip():
+                raise RuntimeError("Could not extract any text from this PDF. It may be a scanned or image-based file.")
             summary_instance.transcript = text
             summary_instance.language = 'text'
             summary_instance.duration_seconds = None
-            summary_text = summarize_text(text, summary_instance.original_filename, 'document')
+            doc_type = 'document'
         elif ext == '.txt':
             text = extract_text_from_txt(file_path)
+            if not text.strip():
+                raise RuntimeError("The text file is empty.")
             summary_instance.transcript = text
             summary_instance.language = 'text'
             summary_instance.duration_seconds = None
-            summary_text = summarize_text(text, summary_instance.original_filename, 'document')
+            doc_type = 'document'
         else:
             transcription = transcribe_audio(file_path)
-            summary_instance.transcript = transcription['text']
+            text = transcription['text']
+            if not text.strip():
+                raise RuntimeError("Could not transcribe any audio from this file.")
+            summary_instance.transcript = text
             summary_instance.language = transcription.get('language', 'unknown')
             summary_instance.duration_seconds = transcription.get('duration')
-            summary_text = summarize_text(transcription['text'], summary_instance.original_filename, 'audio')
+            doc_type = 'audio'
 
+        # 1. Persist the transcript immediately
+        summary_instance.save(update_fields=['transcript', 'language', 'duration_seconds'])
+        
+        # 2. Verify persistence by refreshing from the database
+        summary_instance.refresh_from_db()
+        transcript_len = len(summary_instance.transcript) if summary_instance.transcript else 0
+        logger.info(f"Transcript length: {transcript_len} characters")
+
+        # 3. RAG Indexing BEFORE Summarization
+        try:
+            logger.info("Indexing document...")
+            index_document(summary_instance.transcript, summary_instance.id, summary_instance.original_filename)
+        except Exception as e:
+            logger.error(f"Failed to index document for RAG: {str(e)}")
+
+        # 4. Perform Summarization
+        summary_text = summarize_text(text, summary_instance.original_filename, doc_type)
         summary_instance.summary = summary_text
         summary_instance.status = 'done'
-        summary_instance.save()
+        summary_instance.save(update_fields=['summary', 'status'])
+        
         logger.info(f"Successfully processed: {summary_instance.original_filename}")
 
     except Exception as e:
         logger.error(f"Error processing {summary_instance.original_filename}: {str(e)}", exc_info=True)
         summary_instance.status = 'error'
         summary_instance.error_message = str(e)
-        summary_instance.save()
+        summary_instance.save(update_fields=['status', 'error_message'])
         raise

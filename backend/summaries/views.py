@@ -9,7 +9,7 @@ from django.db import connection
 
 from .models import Summary
 from .serializers import SummarySerializer, UploadSerializer
-from .ai_service import process_file, chat_with_file
+from .ai_service import process_file
 
 DOCUMENT_TYPES = {'.pdf', '.txt'}
 
@@ -97,15 +97,19 @@ class ChatView(APIView):
         if not summary.transcript:
             return Response({'error': 'No content available to chat about.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        question = request.data.get('question', '').strip()
-        if not question:
-            return Response({'error': 'Please provide a question.'}, status=status.HTTP_400_BAD_REQUEST)
+        from .serializers import ChatSerializer
+        serializer = ChatSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        question = serializer.validated_data['question']
 
         try:
-            answer = chat_with_file(
-                transcript=summary.transcript,
-                filename=summary.original_filename,
+            from .ai.rag_service import ask_question
+            answer = ask_question(
                 question=question,
+                summary_id=summary.id,
+                filename=summary.original_filename,
             )
             return Response({'answer': answer})
         except Exception as e:

@@ -3,6 +3,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-secret-key-change-in-production')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',') if os.environ.get('ALLOWED_HOSTS') else ['*']
@@ -82,7 +85,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Asia/Kolkata'
@@ -117,3 +120,12 @@ LOGGING = {
         },
     },
 }
+
+# RAG Configuration
+CHUNK_SIZE = 800
+CHUNK_OVERLAP = 150
+EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
+CHROMA_PERSIST_DIR = os.path.join(os.environ.get('DATA_DIR', BASE_DIR), 'chromadb')
+CHROMA_COLLECTION_NAME = 'snapsummary_chunks'
+RAG_TOP_K = 5
+
