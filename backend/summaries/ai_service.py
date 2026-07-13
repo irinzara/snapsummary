@@ -1,14 +1,12 @@
 import logging
 from pathlib import Path
 
-# Implemented as orchestrator: business logic imported from submodules
-from .ai.extractors import extract_text_from_pdf, extract_text_from_txt
-from .ai.summarizer import transcribe_audio, summarize_text
-from .ai.rag_service import index_document
-
 logger = logging.getLogger(__name__)
 
 def process_file(summary_instance) -> None:
+    from .ai.extractors import extract_text_from_pdf, extract_text_from_txt
+    from .ai.summarizer import transcribe_audio, summarize_text
+    from .ai.rag_service import index_document
     try:
         file_path = summary_instance.file.path
         ext = Path(file_path).suffix.lower()

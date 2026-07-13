@@ -1,6 +1,4 @@
 import os
-import chromadb
-from chromadb.config import Settings as ChromaSettings
 from django.conf import settings
 import logging
 
@@ -11,6 +9,7 @@ _chroma_client = None
 def get_chroma_client():
     global _chroma_client
     if _chroma_client is None:
+        import chromadb
         persist_dir = settings.CHROMA_PERSIST_DIR
         os.makedirs(persist_dir, exist_ok=True)
         _chroma_client = chromadb.PersistentClient(path=persist_dir)
