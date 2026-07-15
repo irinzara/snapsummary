@@ -1,5 +1,5 @@
 :root {
-  --bg:        #0a0a0f;
+  --bg:        #000000;
   --surface:   #13131a;
   --surface2:  #1c1c27;
   --border:    #2a2a3a;
@@ -35,7 +35,25 @@ body {
 @keyframes pulse-ring { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(1.6);opacity:0} }
 @keyframes bubble-in { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 @keyframes typing { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+@keyframes fallIntoPlace { 0% { opacity: 0; transform: translateY(-50px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes floatBubble { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
 .spin { animation: spin 1s linear infinite; }
+
+.animate-fall {
+  opacity: 0;
+  animation: fallIntoPlace 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-fall-delayed {
+  opacity: 0;
+  animation: fallIntoPlace 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: 150ms;
+}
+
+.animate-float-slow {
+  animation: floatBubble 2.5s ease-in-out infinite;
+}
 
 /* ── App Shell ─────────────────────────────────────────────── */
 .app-shell {
@@ -53,8 +71,7 @@ body {
 /* ── Header ─────────────────────────────────────────────────── */
 .header {
   position: sticky; top: 0; z-index: 100;
-  background: rgba(10,10,15,0.85); backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border);
+  background: transparent;
 }
 .header-inner {
   max-width: 860px; margin: 0 auto;
@@ -162,19 +179,19 @@ body {
 
 /* ── Aira Chat Panel ─────────────────────────────────────────── */
 .aira-panel {
-  position: fixed; top: 0; right: 0; bottom: 0;
+  position: fixed; top: 24px; right: 24px; bottom: 24px;
   width: var(--chat-w);
-  background: var(--surface);
-  border-left: 1px solid var(--border);
   display: flex; flex-direction: column;
   z-index: 150;
   animation: slideInRight 0.35s cubic-bezier(0.4,0,0.2,1);
+  border-radius: 24px;
+  overflow: hidden;
 }
 .aira-panel-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 18px;
   background: linear-gradient(135deg, rgba(124,109,250,0.15), rgba(165,148,251,0.08));
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 .aira-panel-identity { display: flex; align-items: center; gap: 12px; }
 .aira-name { font-family: var(--font-head); font-weight: 700; font-size: 1rem; color: var(--text); }
@@ -223,11 +240,11 @@ body {
 
 .aira-input-row {
   display: flex; gap: 8px; padding: 14px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  background: transparent;
 }
 .aira-input {
-  flex: 1; background: var(--surface2); border: 1px solid var(--border2);
+  flex: 1; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1);
   border-radius: 20px; padding: 10px 16px;
   color: var(--text); font-family: var(--font-body); font-size: 0.85rem;
   outline: none; transition: border-color 0.2s;

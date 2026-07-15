@@ -1,3 +1,4 @@
+from pgvector.django import VectorField
 from django.db import models
 
 
@@ -38,3 +39,14 @@ class Summary(models.Model):
     @property
     def file_size_mb(self):
         return round(self.file_size / (1024 * 1024), 2)
+
+class DocumentChunk(models.Model):
+    summary = models.ForeignKey(Summary, on_delete=models.CASCADE, related_name='chunks')
+    filename = models.CharField(max_length=255, blank=True, null=True)
+    content = models.TextField()
+    chunk_index = models.IntegerField()
+    embedding = VectorField(dimensions=3072)
+
+    class Meta:
+        db_table = 'document_chunks'
+        ordering = ['chunk_index']

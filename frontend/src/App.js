@@ -2,12 +2,16 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
+import { jsPDF } from 'jspdf';
 import {
   FileVideo, FileAudio, FileText, CheckCircle, AlertCircle, Trash2,
   ChevronDown, ChevronUp, Loader, Zap, History, Copy, Download,
   Send, X
 } from 'lucide-react';
 import './App.css';
+import { WovenLightHero } from './components/ui/woven-light-hero';
+import { TiltCard } from './components/ui/be-ui-tilt-card';
+import { InteractiveRobotSpline } from './components/ui/interactive-3d-robot';
 
 const API = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
@@ -56,40 +60,11 @@ function AiraAvatar({ size = 44 }) {
   );
 }
 
-// ── Floating Aira Button ─────────────────────────────────────────
-function AiraFloatingBtn({ visible, onClick, chatOpen }) {
-  const [bubbleVisible, setBubbleVisible] = useState(false);
-
-  useEffect(() => {
-    if (visible && !chatOpen) {
-      const t = setTimeout(() => setBubbleVisible(true), 800);
-      return () => clearTimeout(t);
-    } else {
-      setBubbleVisible(false);
-    }
-  }, [visible, chatOpen]);
-
-  if (!visible || chatOpen) return null;
-
-  return (
-    <div className="aira-float-wrap">
-      {bubbleVisible && (
-        <div className="aira-bubble">
-          Chat with <strong>Aira</strong> about your file ✨
-        </div>
-      )}
-      <button className="aira-float-btn" onClick={onClick} title="Chat with Aira">
-        <div className="aira-pulse" />
-        <AiraAvatar size={52} />
-      </button>
-    </div>
-  );
-}
 
 // ── Aira Chat Panel ──────────────────────────────────────────────
 function AiraChatPanel({ item, onClose }) {
   const [messages, setMessages] = useState([
-    { role: 'assistant', text: `Hi! I'm Aira 👋 I've read "${item.original_filename}". What would you like to know about it?` }
+    { role: 'assistant', text: `Hi! I'm Aira 👋 I've read "${item?.original_filename || 'your files'}". What would you like to know about it?` }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -104,6 +79,14 @@ function AiraChatPanel({ item, onClose }) {
     if (!q || loading) return;
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: q }]);
+    
+    if (!item) {
+      setTimeout(() => {
+        setMessages(prev => [...prev, { role: 'assistant', text: "Please upload a file to continue chat" }]);
+      }, 500);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data } = await axios.post(`${API}/api/summaries/${item.id}/chat/`, { question: q });
@@ -120,39 +103,38 @@ function AiraChatPanel({ item, onClose }) {
   };
 
   return (
-    <div className="aira-panel">
-      {/* Panel Header */}
+    <div className="aira-panel bg-gradient-to-br from-slate-300/10 via-slate-500/5 to-slate-900/40 backdrop-blur-xl border border-slate-300/30 shadow-[0_0_40px_rgba(203,213,225,0.15)]">
       <div className="aira-panel-header">
         <div className="aira-panel-identity">
-          <AiraAvatar size={40} />
+          <img src="/blue-sphere.gif" alt="AI Avatar" width={36} height={36} className="rounded-full object-cover mix-blend-screen" />
           <div>
             <div className="aira-name">Aira</div>
-            <div className="aira-status"><span className="aira-dot" />AI Assistant</div>
+            <div className="aira-status"><span className="aira-dot" /> Online</div>
           </div>
         </div>
-        <button className="aira-close" onClick={onClose}><X size={18} /></button>
+        <button onClick={onClose} className="aira-close"><X size={20} /></button>
       </div>
 
       {/* File pill */}
       <div className="aira-file-pill">
         <FileText size={12} />
-        {item.original_filename}
+        {item?.original_filename || 'No file selected'}
       </div>
 
       {/* Messages */}
       <div className="aira-messages">
         {messages.map((m, i) => (
           <div key={i} className={`aira-msg ${m.role}`}>
-            {m.role === 'assistant' && (
-              <div className="aira-msg-avatar"><AiraAvatar size={28} /></div>
-            )}
+            {m.role === 'assistant' && <div className="aira-msg-avatar"><img src="/blue-sphere.gif" alt="AI" width={28} height={28} className="rounded-full object-cover mix-blend-screen" /></div>}
             <div className="aira-msg-bubble">{m.text}</div>
           </div>
         ))}
         {loading && (
           <div className="aira-msg assistant">
-            <div className="aira-msg-avatar"><AiraAvatar size={28} /></div>
-            <div className="aira-msg-bubble aira-typing"><span /><span /><span /></div>
+            <div className="aira-msg-avatar"><img src="/blue-sphere.gif" alt="AI" width={28} height={28} className="rounded-full object-cover mix-blend-screen" /></div>
+            <div className="aira-msg-bubble aira-typing">
+              <span /><span /><span />
+            </div>
           </div>
         )}
         <div ref={bottomRef} />
@@ -179,7 +161,6 @@ function AiraChatPanel({ item, onClose }) {
 // ── Summary Card ─────────────────────────────────────────────────
 function SummaryCard({ item, onDelete }) {
   const [expanded, setExpanded] = useState(false);
-  const [showTranscript, setShowTranscript] = useState(false);
   const meta = STATUS_META[item.status] || STATUS_META.processing;
 
   const copyText = (text, label) => {
@@ -196,6 +177,25 @@ function SummaryCard({ item, onDelete }) {
     a.download = `${item.original_filename}_summary.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadPdf = () => {
+    const doc = new jsPDF();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(`SnapSummary Export`, 10, 20);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`File: ${item.original_filename}`, 10, 30);
+    doc.text(`Date: ${fmt.date(item.created_at)}`, 10, 36);
+    
+    doc.setFontSize(12);
+    const splitSummary = doc.splitTextToSize(item.summary, 190);
+    doc.text(splitSummary, 10, 50);
+
+    doc.save(`${item.original_filename}_summary.pdf`);
+    toast.success('PDF downloaded!');
   };
 
   const FileIcon = item.file_type === 'video' ? FileVideo : item.file_type === 'document' ? FileText : FileAudio;
@@ -241,8 +241,8 @@ function SummaryCard({ item, onDelete }) {
             <button className="action-btn" onClick={downloadTxt}>
               <Download size={13} /> Download .txt
             </button>
-            <button className="action-btn secondary" onClick={() => setShowTranscript(!showTranscript)}>
-              {showTranscript ? 'Hide' : 'Show'} Transcript
+            <button className="action-btn secondary" onClick={downloadPdf}>
+              <Download size={13} /> Download PDF
             </button>
           </div>
 
@@ -253,18 +253,6 @@ function SummaryCard({ item, onDelete }) {
               </p>
             ))}
           </div>
-
-          {showTranscript && (
-            <div className="transcript-box">
-              <div className="transcript-label">
-                Full Transcript
-                <button className="action-btn small" onClick={() => copyText(item.transcript, 'Transcript')}>
-                  <Copy size={11} /> Copy
-                </button>
-              </div>
-              <p className="transcript-text">{item.transcript}</p>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -273,13 +261,60 @@ function SummaryCard({ item, onDelete }) {
 
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView] = useState('upload');
+  const [view, setView] = useState(() => window.location.hash.replace('#', '') === 'history' ? 'history' : 'upload');
   const [uploading, setUploading] = useState(false);
   const [currentItem, setCurrentItem] = useState(null);
   const [history, setHistory] = useState([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatItem, setChatItem] = useState(null);
   const pollRef = useRef(null);
+  const cardsRef = useRef(null);
+  const [scrolledDown, setScrolledDown] = useState(false);
+  const [cardsVisible, setCardsVisible] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolledDown(window.scrollY > window.innerHeight * 0.4);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    window.history.replaceState({ view }, '', window.location.pathname + (view === 'history' ? '#history' : ''));
+
+    const handlePopState = (e) => {
+      if (e.state && e.state.view) {
+        setView(e.state.view);
+      } else {
+        const hashView = window.location.hash.replace('#', '');
+        setView(hashView === 'history' ? 'history' : 'upload');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (newView) => {
+    setView(newView);
+    if (newView === 'history') {
+      window.history.pushState({ view: newView }, '', window.location.pathname + '#history');
+    } else {
+      window.history.pushState({ view: newView }, '', window.location.pathname);
+    }
+  };
+
+  useEffect(() => {
+    if (!cardsRef.current || cardsVisible) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setCardsVisible(true);
+        observer.disconnect();
+      }
+    }, { threshold: 0.15 });
+    observer.observe(cardsRef.current);
+    return () => observer.disconnect();
+  }, [cardsVisible, view]);
 
   useEffect(() => { fetchHistory(); }, []);
 
@@ -311,10 +346,7 @@ export default function App() {
     } catch { clearInterval(pollRef.current); }
   };
 
-  const openChat = () => {
-    if (chatItem) { setChatOpen(true); }
-  };
-
+  const toggleChat = () => setChatOpen(prev => !prev);
   const closeChat = () => setChatOpen(false);
 
   const onDrop = useCallback(async (accepted) => {
@@ -352,86 +384,116 @@ export default function App() {
   const airaVisible = !!chatItem && chatItem.status === 'done';
 
   return (
-    <div className={`app-shell ${chatOpen ? 'chat-open' : ''}`}>
-      <Toaster position="top-center" toastOptions={{ style: { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' } }} />
+    <>
+      {view === 'upload' && <WovenLightHero />}
+      <div id="workspace" className={`app-shell relative ${chatOpen ? 'chat-open' : ''}`}>
+        <Toaster position="top-center" toastOptions={{ style: { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' } }} />
 
-      {/* ── Main Content ── */}
-      <div className="main-content">
-        <header className="header">
-          <div className="header-inner">
-            <div className="logo">
-              <Zap size={20} className="logo-icon" />
-              <span className="logo-text">Snap<span className="logo-accent">Summary</span></span>
-            </div>
-            <nav className="nav">
-              <button className={`nav-btn ${view === 'upload' ? 'active' : ''}`} onClick={() => setView('upload')}>Upload</button>
-              <button className={`nav-btn ${view === 'history' ? 'active' : ''}`} onClick={() => { setView('history'); fetchHistory(); }}>
-                <History size={14} /> History
-              </button>
-            </nav>
-          </div>
-        </header>
+        {/* ── Main Content ── */}
+        <div className="main-content flex items-center justify-center min-h-screen pb-40">
+          <main className="w-full max-w-4xl mx-auto px-4 lg:px-8 z-10 relative">
+            {view === 'upload' && (
+              <>
+                <div ref={cardsRef} className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch min-h-[260px]">
+                  {/* Left Column: Upload */}
+                  <TiltCard className={`flex flex-col w-full h-full rounded-3xl bg-gradient-to-br from-slate-300/10 via-slate-500/5 to-slate-900/40 backdrop-blur-xl border border-slate-300/30 shadow-[0_0_40px_rgba(203,213,225,0.15)] hover:shadow-[0_0_60px_rgba(203,213,225,0.25)] transition-shadow duration-500 ${cardsVisible ? 'animate-fall' : 'opacity-0'}`}>
+                    <div {...getRootProps()} className={`flex-1 ${isDragActive ? 'bg-white/5' : ''} ${uploading ? 'opacity-50 pointer-events-none' : ''} rounded-3xl flex flex-col items-center justify-center p-6 transition-colors cursor-pointer w-full h-full`}>
+                      <input {...getInputProps()} />
+                      <div className="text-center w-full">
+                        {uploading ? (
+                          <><Loader size={36} className="spin mx-auto mb-4 text-slate-300" /><p className="text-white font-medium">Uploading…</p></>
+                        ) : isDragActive ? (
+                          <p className="text-white font-medium">Drop it!</p>
+                        ) : (
+                          <><p className="text-white font-medium text-base">Upload any audio, video, PDF or text file</p><p className="text-slate-400 mt-2 text-sm">MP4, MOV, AVI, MP3, WAV, OGG, PDF, TXT — max 50MB</p></>
+                        )}
+                      </div>
+                    </div>
+                  </TiltCard>
 
-        <main className="main">
-          {view === 'upload' && (
-            <div className="upload-view">
-              <div className="upload-hero">
-                <h1 className="hero-title">Drop your file.<br /><span className="hero-accent">Get the gist.</span></h1>
-              </div>
-              <div {...getRootProps()} className={`dropzone ${isDragActive ? 'drag-over' : ''} ${uploading ? 'disabled' : ''}`}>
-                <input {...getInputProps()} />
-                <div className="dropzone-inner">
-                  {uploading ? (
-                    <><Loader size={36} className="spin drop-icon" /><p className="drop-title">Uploading…</p></>
-                  ) : isDragActive ? (
-                    <p className="drop-title">Drop it!</p>
+                  {/* Right Column: History Link */}
+                  <TiltCard className={`flex flex-col w-full h-full rounded-3xl bg-gradient-to-br from-slate-300/10 via-slate-500/5 to-slate-900/40 backdrop-blur-xl border border-slate-300/30 shadow-[0_0_40px_rgba(203,213,225,0.15)] hover:shadow-[0_0_60px_rgba(203,213,225,0.25)] transition-shadow duration-500 ${cardsVisible ? 'animate-fall-delayed' : 'opacity-0'}`}>
+                    <div onClick={() => { navigateTo('history'); fetchHistory(); }} className="flex-1 rounded-3xl flex flex-col items-center justify-center p-6 transition-colors cursor-pointer w-full h-full hover:bg-white/5 relative z-10 pointer-events-auto">
+                      <History size={42} className="text-slate-300 mb-4 opacity-80" />
+                      <h2 className="text-white font-medium text-xl mb-2 flex items-center gap-3">
+                        View History
+                      </h2>
+                      <p className="text-slate-400 text-sm text-center">Browse all your previously processed files</p>
+                    </div>
+                  </TiltCard>
+                </div>
+
+                {currentItem && (
+                  <div className="mt-8 w-full mx-auto rounded-3xl bg-gradient-to-br from-slate-300/10 via-slate-500/5 to-slate-900/40 backdrop-blur-xl border border-slate-300/30 shadow-[0_0_40px_rgba(203,213,225,0.15)] p-6">
+                    <h3 className="text-lg font-bold text-white mb-4">Current File</h3>
+                    <SummaryCard item={currentItem} onDelete={deleteItem} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {view === 'history' && (
+              <div className="w-full max-w-5xl mx-auto">
+                <div className="flex flex-col mb-8">
+                  <button onClick={() => navigateTo('upload')} className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors text-sm font-medium w-fit">
+                    ← Back to Upload
+                  </button>
+                  <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+                    History <span className="count-badge bg-white/10 text-white px-3 py-1 rounded-full text-lg font-normal">{history.length}</span>
+                  </h2>
+                </div>
+
+                <div className="flex flex-col gap-4 w-full">
+                  {history.length === 0 ? (
+                    <div className="flex items-center justify-center text-slate-400 py-16 rounded-3xl border border-white/10 bg-white/5">
+                      <p>No files processed yet.</p>
+                    </div>
                   ) : (
-                    <><p className="drop-title">Upload any audio, video, PDF or text file</p><p className="drop-hint">MP4, MOV, AVI, MP3, WAV, OGG, PDF, TXT — max 50MB</p></>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                      {history.map(item => (
+                        <div key={item.id} className="flex flex-col w-full rounded-2xl bg-gradient-to-br from-slate-300/10 via-slate-500/5 to-slate-900/40 backdrop-blur-xl border border-slate-300/30 shadow-[0_0_30px_rgba(203,213,225,0.1)] hover:shadow-[0_0_40px_rgba(203,213,225,0.2)] transition-shadow duration-500 p-2">
+                          <SummaryCard item={item} onDelete={deleteItem} />
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
-              {currentItem && (
-                <div className="current-result">
-                  <h3 className="section-title">Current File</h3>
-                  <SummaryCard item={currentItem} onDelete={deleteItem} />
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </main>
+        </div>
 
-          {view === 'history' && (
-            <div className="history-view">
-              <h2 className="section-title">All Summaries <span className="count-badge">{history.length}</span></h2>
-              {history.length === 0 ? (
-                <div className="empty-state"><p>No summaries yet. Upload a file to get started.</p></div>
-              ) : (
-                <div className="history-list">
-                  {history.map(item => (
-                    <SummaryCard key={item.id} item={item} onDelete={deleteItem} />
-                  ))}
-                </div>
-              )}
+        {/* ── Interactive Robot ── */}
+        <div 
+          onClick={toggleChat}
+          className={`group absolute bottom-0 right-0 w-[350px] h-[350px] overflow-visible pointer-events-auto z-[200] transition-all duration-300 ease-out transform scale-[0.6] origin-bottom-right cursor-pointer ${scrolledDown && view === 'upload' && !chatOpen ? 'translate-y-0 opacity-100' : 'translate-y-12 opacity-0 pointer-events-none'}`}
+        >
+          {/* Hover Tooltip (Cartoon Speech Bubble) */}
+          <div className={`absolute -top-8 left-[45%] -translate-x-1/2 pointer-events-none z-[60] transition-all duration-200 ease-out origin-bottom animate-float-slow ${chatOpen ? 'opacity-0 scale-90' : 'opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100'}`}>
+            <div className="bg-white text-[#1a1a1a] px-7 py-3.5 rounded-[24px] shadow-[0_4px_14px_rgba(0,0,0,0.25)] font-semibold text-[17px] whitespace-nowrap relative">
+              Chat with Aira
+              {/* Tail Bubbles */}
+              <div className="absolute -bottom-4 left-[45%] w-[14px] h-[14px] bg-white rounded-full shadow-sm" />
+              <div className="absolute -bottom-8 left-[40%] w-[8px] h-[8px] bg-white rounded-full shadow-sm" />
             </div>
-          )}
-        </main>
+          </div>
+
+          {/* Cropping Mask */}
+          <div className="absolute inset-0 overflow-hidden rounded-bl-3xl">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[450px] h-[450px] drop-shadow-2xl">
+              <InteractiveRobotSpline
+                scene="https://prod.spline.design/PyzDhpQ9E5f1E3MT/scene.splinecode"
+                className="w-full h-full pointer-events-none"
+              />
+            </div>
+          </div>
+          {/* Click Catcher Overlay */}
+          <div className="absolute inset-0 z-10" />
+        </div>
       </div>
 
-      {/* ── Aira Chat Panel (right side) ── */}
-      {chatOpen && chatItem && (
-        <AiraChatPanel item={chatItem} onClose={closeChat} />
-      )}
-
-      {/* ── Floating Aira Button ── */}
-      <AiraFloatingBtn visible={airaVisible} onClick={openChat} chatOpen={chatOpen} />
-    </div>
+      {/* ── Chat Panel ── */}
+      {chatOpen && <AiraChatPanel item={chatItem} onClose={closeChat} />}
+    </>
   );
 }
-
-// // Missing import fix
-// function History(props) {
-//   return (
-//     <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-//       <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>
-//     </svg>
-//   );
-// }
